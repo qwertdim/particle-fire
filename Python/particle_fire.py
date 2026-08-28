@@ -1,5 +1,4 @@
 import math
-import random
 import numpy as np
 import pygame
 
@@ -34,41 +33,26 @@ def hsl_to_rgb(hue: float, sat: float, light: float):
 
 
 # -------------------------------------------------
-# Particle
-# -------------------------------------------------
-class Particle:
-    __slots__ = ("x", "y", "speed", "angular_speed", "direction")
-
-    def __init__(self):
-        self.init()
-
-    def init(self):
-        self.x = 0.0
-        self.y = 0.0
-        self.speed = 0.0001 + 0.001 * random.random()
-        self.angular_speed = 0.006 * random.random()
-        self.direction = 2.0 * math.pi * random.random()
-
-    def update(self):
-        self.x += math.cos(self.direction) * self.speed
-        self.y += math.sin(self.direction) * self.speed
-        if self.x * self.x + self.y * self.y > 1.0:
-            self.x = 0.0
-            self.y = 0.0
-        self.direction += self.angular_speed
-
-
-# -------------------------------------------------
 # Swarm
 # -------------------------------------------------
 class Swarm:
     def __init__(self, n: int):
-        self.particles = [Particle() for _ in range(n)]
+        rng = np.random.default_rng()
+        self.particles_x = np.zeros(n, dtype=np.float32)
+        self.particles_y = np.zeros(n, dtype=np.float32)
+        self.particles_speed = rng.uniform(0.0001, 0.0011, n)
+        self.particles_angular_speed = rng.uniform(0.0, 0.006, n)
+        self.particles_direction = rng.uniform(0.0, np.pi * 2.0, n)
+        self.hue = 0.3
         self.hue = 0.3
 
     def update(self):
-        for p in self.particles:
-            p.update()
+        self.particles_x += np.cos(self.particles_direction) * self.particles_speed
+        self.particles_y += np.sin(self.particles_direction) * self.particles_speed
+        mask = self.particles_x * self.particles_x + self.particles_y * self.particles_y > 1.0
+        self.particles_x[mask] = 0.0
+        self.particles_y[mask] = 0.0
+        self.particles_direction += self.particles_angular_speed
 
     def draw(self, buf: np.ndarray, width: int, height: int):
         """buf shape = (height, width, 3)"""
@@ -76,15 +60,12 @@ class Swarm:
         if self.hue > 1.0:
             self.hue = 0.0
 
-        r, g, b = hsl_to_rgb(self.hue, 1.0, 0.7)
+        rgb = np.array(hsl_to_rgb(self.hue, 1.0, 0.7), dtype=np.uint8)
 
-        for p in self.particles:
-            x = int(width * p.x) + width // 2
-            y = int(width * p.y) + height // 2   # original uses width for both axes
-            if 0 <= x < width and 0 <= y < height:
-                buf[y, x, 0] = r
-                buf[y, x, 1] = g
-                buf[y, x, 2] = b
+        x = (width * self.particles_x).astype(np.int16) + width // 2
+        y = (width * self.particles_y).astype(np.int16) + height // 2
+        mask = (0 <= y) & (y < height) & (0 <= x) & (x < width)
+        buf[x[mask], y[mask]] = rgb
 
 
 # -------------------------------------------------
@@ -93,30 +74,16 @@ class Swarm:
 # -------------------------------------------------
 def blur(buf: np.ndarray):
     """
-    In-place separable box blur of radius 1.
+    Separable box blur of radius 1.
     buf shape = (H, W, 3), dtype=uint8
     """
-    # Horizontal pass
-    left  = np.roll(buf,  1, axis=1)
-    right = np.roll(buf, -1, axis=1)
-
-    # edges: average of 2 pixels, interior: average of 3
-    # We approximate the original by using a weighted average that is
-    # very close and fully vectorized.
-    horiz = (left.astype(np.uint16) + buf.astype(np.uint16) + right.astype(np.uint16)) // 3
-    # fix the two edge columns to match original count=2 behaviour more closely
-    horiz[:, 0, :]  = (buf[:, 0, :].astype(np.uint16) + right[:, 0, :].astype(np.uint16)) // 2
-    horiz[:, -1, :] = (buf[:, -1, :].astype(np.uint16) + left[:, -1, :].astype(np.uint16)) // 2
-
-    # Vertical pass
-    up   = np.roll(horiz,  1, axis=0)
-    down = np.roll(horiz, -1, axis=0)
-
-    vert = (up.astype(np.uint16) + horiz.astype(np.uint16) + down.astype(np.uint16)) // 3
-    vert[0, :, :]  = (horiz[0, :, :].astype(np.uint16) + down[0, :, :].astype(np.uint16)) // 2
-    vert[-1, :, :] = (horiz[-1, :, :].astype(np.uint16) + up[-1, :, :].astype(np.uint16)) // 2
-
-    np.copyto(buf, vert.astype(np.uint8))
+    new_buf = buf.astype(np.uint16)
+    new_buf[:-1] += buf[1:]
+    new_buf[1:] += buf[:-1]
+    new_buf[:, :-1] += buf[:, 1:]
+    new_buf[:, 1:] += buf[:, :-1]
+    new_buf //= 5
+    return new_buf.astype(np.uint8)
 
 
 # -------------------------------------------------
@@ -132,7 +99,7 @@ def main():
     clock = pygame.time.Clock()
 
     # Persistent buffer: (height, width, 3)
-    buf = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+    buf = np.zeros((WIDTH, HEIGHT, 3), dtype=np.uint8)
 
     swarm = Swarm(N_PARTICLES)
 
@@ -146,10 +113,10 @@ def main():
 
         swarm.update()
         swarm.draw(buf, WIDTH, HEIGHT)
-        blur(buf)
+        buf = blur(buf)
 
         # pygame.surfarray expects (width, height, 3)
-        pygame.surfarray.blit_array(screen, np.transpose(buf, (1, 0, 2)))
+        pygame.surfarray.blit_array(screen, buf)
         pygame.display.flip()
 
         clock.tick(60)
