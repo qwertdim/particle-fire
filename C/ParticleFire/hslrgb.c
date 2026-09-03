@@ -99,9 +99,9 @@ uint32_t hsl_to_rgb(double hue, double sat, double light)
     assert(green >=0 && green <= 1.0);
     assert(blue >=0 && blue <= 1.0);
 
-    uint32_t r = (uint32_t)round(red * 0xFF);
-    uint32_t g = (uint32_t)round(green * 0xFF);
-    uint32_t b = (uint32_t)round(blue * 0xFF);
+    uint32_t r = red * 0xFF;
+    uint32_t g = green * 0xFF;
+    uint32_t b = blue * 0xFF;
 
     return RGB(r,g,b);
 }
