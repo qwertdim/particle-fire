@@ -24,12 +24,11 @@ def hsl_to_rgb(hue: float, sat: float, light: float):
     else:
         r, g, b = chroma, 0.0, x
 
-    m = max(0.0, light - chroma / 2.0)
-    return (
-        int(round((r + m) * 255)),
-        int(round((g + m) * 255)),
-        int(round((b + m) * 255)),
-    )
+    m = light - chroma / 2.0
+    if m < 0.0:
+        m = 0.0
+
+    return (r + m) * 255, (g + m) * 255, (b + m) * 255
 
 
 # -------------------------------------------------
@@ -43,7 +42,6 @@ class Swarm:
         self.particles_speed = rng.uniform(0.0001, 0.0011, n)
         self.particles_angular_speed = rng.uniform(0.0, 0.006, n)
         self.particles_direction = rng.uniform(0.0, np.pi * 2.0, n)
-        self.hue = 0.3
         self.hue = 0.3
 
     def update(self):
@@ -83,7 +81,7 @@ def blur(buf: np.ndarray):
     new_buf[:, :-1] += buf[:, 1:]
     new_buf[:, 1:] += buf[:, :-1]
     new_buf //= 5
-    return new_buf.astype(np.uint8)
+    buf[:] = new_buf
 
 
 # -------------------------------------------------
@@ -113,7 +111,7 @@ def main():
 
         swarm.update()
         swarm.draw(buf, WIDTH, HEIGHT)
-        buf = blur(buf)
+        blur(buf)
 
         # pygame.surfarray expects (width, height, 3)
         pygame.surfarray.blit_array(screen, buf)
